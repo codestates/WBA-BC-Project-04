@@ -25,7 +25,7 @@ func InitLogger(cfg *conf.Config) (err error) {
 	cf := cfg.Log
 
 	now := time.Now()
-	lPath := fmt.Sprintf("%s_%s.log", cf.Fpath, now.Format("2006-01-02"))
+	lPath := fmt.Sprintf("logs/%s_%s.log", cf.Fpath, now.Format("2006-01-02"))
 
 	writeSyncer := getLogWriter(lPath, cf.Msize, cf.Mbackup, cf.Mage)
 	encoder := getEncoder()
