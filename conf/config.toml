@@ -47,7 +47,7 @@ mbackup = 5    # number of log files
 [contract]
 netUrl = "https://api.test.wemix.com"
 ownerAddress = "0xC86C3c58e0eA6d0e159D883086fB5A9DA102aC09"
-contractAddress = "0x20d2434416B2C850Ad7b933E98Deb683cc58e390"
+contractAddress = "0xc1D381672563578B94f65450E5482CABdb529f3a"
 
 [keyStore]
 path = "./keystore/keystore"

@@ -10,8 +10,11 @@ import (
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/event"
+	"github.com/holiman/uint256"
+	"go.mongodb.org/mongo-driver/bson"
 )
 
 type Block struct {
@@ -36,6 +39,13 @@ type Transaction struct {
 	BlockNumber uint64 `bson:"blockNumber"`
 }
 
+type createMatchEvent struct {
+	P1         string `bson:"p1"`
+	P2         string `bson:"p2"`
+	MatchId    string `bson:"matchId"`
+	MatchState int    `bson:"matchState"`
+}
+
 func (p *Model) RunDaemon(quit chan bool) {
 	fmt.Println("run daemon")
 	// ethclint 초기화
@@ -50,12 +60,14 @@ func (p *Model) RunDaemon(quit chan bool) {
 	}
 	// subscribe
 	logs := make(chan types.Log)
-
 	sub := event.Resubscribe(10*time.Second, func(ctx context.Context) (event.Subscription, error) {
 		return client.SubscribeFilterLogs(context.Background(), query, logs)
 	})
 
-	fmt.Println("subscribe")
+	logCreateMatchSig := []byte("CreateMatchEvent(address,address,uint256)")
+	logMatchEndSig := []byte("MatchEndEvent(uint256,int256)")
+	logCreateMatchSigHash := crypto.Keccak256Hash(logCreateMatchSig)
+	logMatchEndSigHash := crypto.Keccak256Hash(logMatchEndSig)
 
 	for {
 		select {
@@ -67,59 +79,60 @@ func (p *Model) RunDaemon(quit chan bool) {
 			log.Error(err.Error())
 			return
 		case scribelog := <-logs:
-			block, err := client.BlockByNumber(context.Background(), new(big.Int).SetUint64(scribelog.BlockNumber))
+			switch scribelog.Topics[0].Hex() {
+			case logCreateMatchSigHash.Hex():
+				var createMatchEvent = createMatchEvent{}
 
-			// 블록 구조체 생성
-			b := Block{
-				BlockHash:    block.Hash().Hex(),
-				BlockNumber:  block.Number().Uint64(),
-				GasLimit:     block.GasLimit(),
-				GasUsed:      block.GasUsed(),
-				Time:         block.Time(),
-				Nonce:        block.Nonce(),
-				Transactions: make([]Transaction, 0),
-			}
-
-			// 트랜잭션 추출
-			txs := block.Transactions()
-			if len(txs) > 0 {
-				for _, tx := range txs {
-					msg, err := tx.AsMessage(types.LatestSignerForChainID(tx.ChainId()), block.BaseFee())
-					if err != nil {
-						log.Error(err.Error())
-					}
-
-					// 트랜잭션 구조체 생성
-					t := Transaction{
-						TxHash:      tx.Hash().Hex(),
-						To:          "", // 디폴트 값 처리
-						From:        msg.From().Hex(),
-						Nonce:       tx.Nonce(),
-						GasPrice:    tx.GasPrice().Uint64(),
-						GasLimit:    tx.Gas(),
-						Amount:      tx.Value().Uint64(),
-						BlockHash:   block.Hash().Hex(),
-						BlockNumber: block.Number().Uint64(),
-					}
-
-					if tx.To() != nil {
-						t.To = tx.To().Hex()
-					}
-
-					b.Transactions = append(b.Transactions, t)
+				matchId, err := uint256.FromHex(scribelog.Topics[3].Hex())
+				if err != nil {
+					log.Error(err.Error())
 				}
-			}
+				createMatchEvent.P1 = scribelog.Topics[1].String()
+				createMatchEvent.P2 = scribelog.Topics[2].String()
+				createMatchEvent.MatchId = scribelog.Topics[3].String()
+				createMatchEvent.MatchState = 1
+				_, err = p.gameCol.InsertOne(context.TODO(), createMatchEvent)
+				if err != nil {
+					log.Error(err.Error())
+				}
+				fmt.Printf("SaveCreateMatchEvent: %v ", matchId)
+			case logMatchEndSigHash.Hex():
+				matchState := new(big.Int)
+				matchState.SetBytes(scribelog.Topics[2].Bytes())
 
-			// DB insert
-			err = p.SaveBlock(&b)
-			if err != nil {
-				log.Error(err.Error())
+				updateFilter := bson.M{"matchId": scribelog.Topics[1].String(), "matchState": 1}
+				update := bson.D{
+					{Key: "$set", Value: bson.D{
+						{Key: "matchState", Value: matchState.Int64()},
+					}},
+				}
+				_, err = p.gameCol.UpdateOne(context.TODO(), updateFilter, update)
+				if err != nil {
+					log.Error(err.Error())
+				}
+
+				matchId, err := uint256.FromHex(scribelog.Topics[1].Hex())
+				if err != nil {
+					log.Error(err.Error())
+				}
+				fmt.Printf("SaveEndMatchEvent: %v ", matchId)
 			}
 		}
 	}
 }
 func (p *Model) SaveBlock(block *Block) error {
 	_, err := p.gameCol.InsertOne(context.TODO(), block)
+	if err != nil {
+		log.Error(err.Error())
+		return err
+	}
+	fmt.Println("Insert succeed")
+
+	return nil
+}
+
+func (p *Model) SaveCreateMatchEvent(event *createMatchEvent) error {
+	_, err := p.gameCol.InsertOne(context.TODO(), event)
 	if err != nil {
 		log.Error(err.Error())
 		return err
