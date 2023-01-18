@@ -13,6 +13,7 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/holiman/uint256"
 )
 
 type CreateMatch struct {
@@ -143,7 +144,9 @@ func (p *Model) EndMatchModel(match EndMatch) error {
 	auth.GasPrice = gasPrice
 	matchState := big.NewInt(int64(match.MatchState))
 	matchId := new(big.Int)
-	matchId.SetString(match.MatchId, 10)
+	matchIdtemp, _ := uint256.FromHex(match.MatchId)
+	matchId.Set(matchIdtemp.ToBig())
+
 	tx, err := instance.MatchEnd(auth, matchId, winnerAddress, losserAddress, matchState)
 	if err != nil {
 		log.Error("CreateMatchByOwner", err.Error())

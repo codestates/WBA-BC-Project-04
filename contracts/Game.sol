@@ -153,6 +153,8 @@ contract Game is IERC20 {
             );
     }
 
+    uint256 private _feePercent = 100; // 수수료 : 10 %
+
     event CreateMatchEvent(
         address indexed p1,
         address indexed p2,
@@ -182,48 +184,6 @@ contract Game is IERC20 {
         return matchId;
     }
 
-    // function createMatch(
-    //     string calldata _name,
-    //     address _p1Address,
-    //     address _p2Address,
-    //     // Card[] memory _p1Cards,
-    //     // Card[] memory _p2Cards,
-    //     uint256 _matchPrice
-    // ) external returns (Match memory) {
-    //     uint256 matchId = generateMatchID();
-    //     Match memory tempMatch;
-    //     tempMatch.matchStatus = MatchStatus.WAIT;
-    //     tempMatch.name = _name;
-    //     tempMatch.p1 = _p1Address;
-    //     tempMatch.p2 = _p2Address;
-    //     // tempMatch.p1Card = _p1Cards;
-    //     // tempMatch.p2Card = _p2Cards;
-    //     tempMatch.matchPrice = _matchPrice;
-    //     matches[matchId] = tempMatch;
-    //     //approve(owner, _matchPrice);
-    //     emit CreateMatchEvent(_p1Address, _p2Address, matchId);
-    //     return matches[matchId];
-    // }
-
-    // event JoinMatchEvent(
-    //     address indexed p1,
-    //     address indexed p2,
-    //     uint256 indexed matchId
-    // );
-
-    // function joinMatch(uint256 _matchId, uint128 _matchPrice)
-    //     external
-    //     returns (Match memory)
-    // {
-    //     Match memory tempMatch = getMatch(_matchId);
-    //     require(msg.sender == tempMatch.p2);
-    //     require(_matchPrice == tempMatch.matchPrice);
-    //     matches[_matchId].matchStatus = MatchStatus.STARTED;
-    //     // approve(owner, _matchPrice);
-    //     emit JoinMatchEvent(tempMatch.p1, msg.sender, _matchId);
-    //     return matches[_matchId];
-    // }
-
     event MatchEndEvent(uint256 indexed matchId, int256 indexed _matchState);
 
     function matchEnd(
@@ -231,31 +191,31 @@ contract Game is IERC20 {
         address _winner,
         address _losser,
         int256 _matchState
-    ) external payable onlyOwner returns (Match memory) {
+    ) external payable onlyOwner {
         Match memory tempMatch = getMatch(_matchId);
-        require(tempMatch.matchStatus == MatchStatus.STARTED);
+        require(
+            tempMatch.matchStatus == MatchStatus.STARTED,
+            "match is not start!"
+        );
+        require(
+            (tempMatch.p1 == _winner || tempMatch.p1 == _losser) &&
+                (tempMatch.p2 == _winner || tempMatch.p2 == _losser),
+            "address is not matched!"
+        );
+        require(3 <= _matchState && _matchState >= 5, "match state is wrong!");
         if (_matchState == 3) {
             // 정상 종료, 승자 존재
             matches[_matchId].matchStatus = MatchStatus.ENDED;
-            // transferFrom(_losser, owner, tempMatch.matchPrice);
-            // approveReset(_winner, owner);
-            // transfer(_winner, tempMatch.matchPrice);
             transferByOwner(_losser, _winner, tempMatch.matchPrice);
         } else if (_matchState == 4) {
             // 취소, 탈주 승자 존재
             matches[_matchId].matchStatus = MatchStatus.CANCLED;
-            // transferFrom(_losser, owner, tempMatch.matchPrice);
-            // approveReset(_winner, owner);
-            // transfer(_winner, tempMatch.matchPrice);
             transferByOwner(_losser, _winner, tempMatch.matchPrice);
         } else if (_matchState == 5) {
             // 무승부 승자 무시
             matches[_matchId].matchStatus = MatchStatus.DRAWED;
-            // approveReset(_winner, owner);
-            // approveReset(_losser, owner);
         }
         emit MatchEndEvent(_matchId, _matchState);
-        return matches[_matchId];
     }
 
     function getMatch(uint256 _matchId) public view returns (Match memory) {
